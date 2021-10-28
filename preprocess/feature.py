@@ -6,6 +6,7 @@ import pandas as pd
 from preprocess.STMatrix import STMatrix
 from utils.minmax_normalization import MinMaxNormalization
 from utils.utils import *
+import datetime
 
 known_road = get_know_road()
 num_known = len(known_road)
@@ -25,6 +26,20 @@ def missing_data():
     return data
 
 
+def weekday(timestamps):
+    weeks = []
+    for item in timestamps:
+        date = item[0:9]
+        month = int(item[4:6])
+        day = int(item[6:8])
+        week = datetime.date(2019, month, day).weekday()
+        if week < 5:
+            weeks.append(0)
+        else:
+            weeks.append(1)
+    return weeks
+
+
 def get_timestamps():
     alltimestamp = []
     for i in range(1, 21):
@@ -36,7 +51,7 @@ def get_timestamps():
     return alltimestamp
 
 
-def Matrix(len_closeness, len_period, len_trend, len_test=None, external_data=True):
+def Matrix(len_closeness, len_period, len_trend, len_test=None, external_data=False):
     alldata = missing_data()
     alltimestamp = get_timestamps()
     alltimestamp = np.array(alltimestamp)
@@ -82,8 +97,13 @@ def Matrix(len_closeness, len_period, len_trend, len_test=None, external_data=Tr
         if l > 0:
             X_test.append(X_)
     print('train shape:', XC_train.shape, Y_train.shape, 'test shape: ', XC_test.shape, Y_test.shape)
+    if external_data:
+        weeks = weekday(timestamps_Y)
+        weeks = np.asarray(weeks)
+        weeks = weeks.reshape(-1, 1)
+        meta_feature_train, meta_feature_test = weeks[:-len_test], weeks[-len_test:]
+        X_train.append(meta_feature_train)
+        X_test.append(meta_feature_test)
     return X_train, Y_train, X_test, Y_test, mmn, timestamp_train, timestamp_test
 
-
 # Matrix(len_closeness, len_period, len_trend, 100, False)
-

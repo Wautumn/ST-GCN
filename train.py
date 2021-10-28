@@ -1,8 +1,16 @@
 import tensorflow as tf
+
 import numpy as np
 import math
 import numpy.linalg as la
-
+from keras.layers import (
+    Input,
+    Activation,
+    merge,
+    Dense,
+    Reshape
+)
+from keras.layers.merge import add
 from model.tgcn import tgcnCell
 from preprocess.adjacent import get_adjacent_matrix
 from preprocess.feature import Matrix
@@ -32,7 +40,7 @@ len_test = 200
 adj = get_adjacent_matrix()
 X_train, Y_train, X_test, Y_test, mmn, timestamp_train, timestamp_test = Matrix(
     len_closeness=len_clossness, len_period=len_period, len_trend=len_trend,
-    len_test=len_test)
+    len_test=len_test, external_data=True)
 
 x_data = X_train[0]
 y_data = Y_train
@@ -48,7 +56,8 @@ c = X_test[2][0:100, :]
 d = Y_test[0:100]
 print()
 
-def model(inputs_c, inputs_p, inputs_t, _weights, _biases, external_dim):
+
+def model(inputs_c, inputs_p, inputs_t, _weights, _biases, external_input):
     final_output = []
     if inputs_c is not None:
         cell_1 = tgcnCell(gru_units, adj, num_nodes=num_nodes)
@@ -98,6 +107,18 @@ def model(inputs_c, inputs_p, inputs_t, _weights, _biases, external_dim):
         output = tf.transpose(output, perm=[0, 1, 2])
         output = tf.reshape(output, shape=[-1, num_nodes])
         final_output.append(output)
+    if external_input is not None:
+        # external input
+        embedding = Dense(output_dim=10)(external_input)
+        embedding = Activation('relu')(embedding)
+        h1 = Dense(output_dim=100)(embedding)
+        activation = Activation('relu')(h1)
+        external_output = Reshape((-1,100))(activation)
+        # main_output = merge([main_output, external_output], mode='sum')
+        final_output = add([final_output, external_output])
+
+    else:
+        print('external_dim: None', )
 
     if len(final_output) == 1:
         return tf.tanh(final_output[0])
@@ -112,7 +133,7 @@ inputs = tf.placeholder(tf.float32, shape=[None, 3, num_nodes])
 inputs_c = tf.placeholder(tf.float32, shape=[None, len_clossness, num_nodes], name="inputs_c")
 inputs_p = tf.placeholder(tf.float32, shape=[None, len_period, num_nodes], name="inputs_p")
 inputs_t = t = tf.placeholder(tf.float32, shape=[None, len_trend, num_nodes], name="inputs_t")
-# external = tf.placeholder(tf.float32, shape=[None, 1], name="external")
+external = tf.placeholder(tf.float32, shape=[None, 1], name="external")
 labels = tf.placeholder(tf.float32, shape=[None, num_nodes])
 
 # Graph weights
@@ -169,14 +190,14 @@ for epoch in range(training_epoch):
         mini_batch_c = X_train[0][m * batch_size: (m + 1) * batch_size]
         mini_batch_p = X_train[1][m * batch_size: (m + 1) * batch_size]
         mini_batch_t = X_train[2][m * batch_size: (m + 1) * batch_size]
-        # mini_batch_e = X_train[3][m * batch_size: (m + 1) * batch_size]
+        mini_batch_e = X_train[3][m * batch_size: (m + 1) * batch_size]
 
         mini_label = Y_train[m * batch_size: (m + 1) * batch_size]
 
         _, loss1, rmse1, mae1, train_output = sess.run([optimizer, loss, error, mae_c, y_pred],
                                                        feed_dict={inputs_c: mini_batch_c, inputs_p: mini_batch_p,
                                                                   inputs_t: mini_batch_t,
-                                                                  # external: mini_batch_e,
+                                                                  external: mini_batch_e,
                                                                   labels: mini_label})
         # print(rmse1)
         batch_loss.append(loss1)
@@ -187,7 +208,7 @@ for epoch in range(training_epoch):
     loss2, rmse2, test_output = sess.run([loss, error, y_pred],
                                          feed_dict={inputs_c: X_test[0][0:100, :], inputs_p: X_test[1][0:100, :],
                                                     inputs_t: X_test[2][0:100, :],
-                                                    # external: X_test[3],
+                                                    external: X_test[3],
                                                     labels: Y_test[0:100]})
     test_label = np.reshape(Y_test[0:100], [-1, num_nodes])
     rmse, mae, acc, r2_score, var_score = evaluation(test_label, test_output)
